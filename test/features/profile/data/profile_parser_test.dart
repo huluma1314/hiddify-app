@@ -184,19 +184,22 @@ void main() {
       final xconfig = outbound["xconfig"] as Map<String, dynamic>;
       final xrayOutbound = (xconfig["outbounds"] as List<dynamic>).single as Map<String, dynamic>;
       final settings = xrayOutbound["settings"] as Map<String, dynamic>;
+      final server = (settings["servers"] as List<dynamic>).single as Map<String, dynamic>;
+      final user = (server["users"] as List<dynamic>).single as Map<String, dynamic>;
       final streamSettings = xrayOutbound["streamSettings"] as Map<String, dynamic>;
       final wsSettings = streamSettings["wsSettings"] as Map<String, dynamic>;
+      final headers = wsSettings["headers"] as Map<String, dynamic>;
 
       expect(outbound["type"], equals("xray"));
       expect(outbound["tag"], equals("香港高速专线1[4K]"));
       expect(xrayOutbound["protocol"], equals("socks"));
-      expect(settings["address"], equals("t-uc222-10067.ci-lab.com"));
-      expect(settings["port"], equals(80));
-      expect(settings["user"], equals("pro:u2025887"));
-      expect(settings["pass"], equals("3de79113-832d-436c-a2c6-dcf62f0be38e"));
+      expect(server["address"], equals("t-uc222-10067.ci-lab.com"));
+      expect(server["port"], equals(80));
+      expect(user["user"], equals("pro:u2025887"));
+      expect(user["pass"], equals("3de79113-832d-436c-a2c6-dcf62f0be38e"));
       expect(streamSettings["network"], equals("ws"));
       expect(wsSettings["path"], equals("/gost"));
-      expect(wsSettings["host"], equals("t-uc222-10067.ci-lab.com"));
+      expect(headers["Host"], equals("t-uc222-10067.ci-lab.com"));
     });
 
     test("Should deduplicate generated outbound tags", () {

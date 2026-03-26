@@ -382,17 +382,28 @@ class ProfileParser {
                   'tag': 'proxy',
                   'protocol': 'socks',
                   'settings': {
-                    'address': node.address,
-                    'port': node.port,
-                    'user': node.username,
-                    'pass': node.password,
+                    'servers': [
+                      {
+                        'address': node.address,
+                        'port': node.port,
+                        'users': [
+                          {
+                            'user': node.username,
+                            'pass': node.password,
+                          },
+                        ],
+                      },
+                    ],
                   },
                   'streamSettings': {
                     'network': 'ws',
                     'security': 'none',
                     'wsSettings': {
                       'path': node.wsPath,
-                      if (node.wsHost.isNotEmpty) 'host': node.wsHost,
+                      if (node.wsHost.isNotEmpty)
+                        'headers': {
+                          'Host': node.wsHost,
+                        },
                     },
                   },
                 },
