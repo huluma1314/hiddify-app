@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 abstract class Constants {
-  static const appName = "Hiddify";
+  static const appName = "Huluma Proxy";
   static const githubUrl = "https://github.com/huluma1314/hiddify-app";
   static const licenseUrl = "https://github.com/huluma1314/hiddify-app/blob/main/LICENSE.md";
   static const githubReleasesApiUrl = "https://api.github.com/repos/huluma1314/hiddify-app/releases";
