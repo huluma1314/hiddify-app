@@ -217,13 +217,17 @@ jobs:
           echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
 
       - name: Setup Android Signing Properties
-        if: ${{ inputs.upload-artifact && startsWith(matrix.platform,'android') && secrets.ANDROID_SIGNING_KEY != '' && secrets.ANDROID_SIGNING_STORE_PASSWORD != '' && secrets.ANDROID_SIGNING_KEY_PASSWORD != '' && secrets.ANDROID_SIGNING_KEY_ALIAS != '' }}
+        if: ${{ inputs.upload-artifact && startsWith(matrix.platform,'android') }}
         run: |
-          echo "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > android/key.jks
-          echo "storeFile=$(pwd)/android/key.jks" > android/key.properties
-          echo "storePassword=${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}" >> android/key.properties
-          echo "keyPassword=${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}" >> android/key.properties
+          if [ -n "${{ secrets.ANDROID_SIGNING_KEY }}" ] && [ -n "${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}" ]; then
+            echo "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > android/key.jks
+            echo "storeFile=$(pwd)/android/key.jks" > android/key.properties
+            echo "storePassword=${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}" >> android/key.properties
+            echo "keyPassword=${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}" >> android/key.properties
+            echo "keyAlias=${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}" >> android/key.properties
+          else
+            echo "Android signing secrets are missing; fallback to debug signing."
+          fi
 
       - name: Setup Windows Signing Properties
         if: ${{ inputs.upload-artifact && startsWith(matrix.platform,'windows') }}
