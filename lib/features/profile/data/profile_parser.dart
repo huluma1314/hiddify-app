@@ -15,6 +15,26 @@ import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:meta/meta.dart';
 
+class _ShadowrocketGostNode {
+  const _ShadowrocketGostNode({
+    required this.tag,
+    required this.address,
+    required this.port,
+    required this.username,
+    required this.password,
+    required this.wsPath,
+    required this.wsHost,
+  });
+
+  final String tag;
+  final String address;
+  final int port;
+  final String username;
+  final String password;
+  final String wsPath;
+  final String wsHost;
+}
+
 /// parse profile subscription url and headers for data
 ///
 /// ***name parser hierarchy:***
@@ -66,8 +86,9 @@ class ProfileParser {
             cancelToken: CancelToken(),
             ref: _ref,
           );
+          rewriteSpecialFormatsInPlace(tempFilePath);
         }, (_, __) => ProfileFailure.unexpected())
-        .flatMap((_) => TaskEither.fromEither(populateHeaders(content: content)))
+        .flatMap((_) => TaskEither.fromEither(populateHeaders(content: File(tempFilePath).readAsStringSync())))
         .flatMap(
           (populatedHeaders) => TaskEither.fromEither(
             parse(
@@ -134,12 +155,15 @@ class ProfileParser {
   Either<ProfileFailure, ProfileEntriesCompanion> offlineUpdate({
     required ProfileEntity profile,
     required String tempFilePath,
-  }) => profile
-      .map(
-        remote: (rp) => parse(profile: rp, tempFilePath: tempFilePath),
-        local: (lp) => parse(tempFilePath: tempFilePath, profile: lp),
-      )
-      .flatMap((profEntity) => Either.tryCatch(() => profEntity.toUpdateEntry(), ProfileFailure.unexpected));
+  }) {
+    rewriteSpecialFormatsInPlace(tempFilePath);
+    return profile
+        .map(
+          remote: (rp) => parse(profile: rp, tempFilePath: tempFilePath),
+          local: (lp) => parse(tempFilePath: tempFilePath, profile: lp),
+        )
+        .flatMap((profEntity) => Either.tryCatch(() => profEntity.toUpdateEntry(), ProfileFailure.unexpected));
+  }
 
   TaskEither<ProfileFailure, Map<String, dynamic>> _downloadProfile(
     String url,
@@ -170,6 +194,7 @@ class ProfileParser {
       cancelToken: cancelToken ?? CancelToken(),
       ref: _ref,
     );
+    rewriteSpecialFormatsInPlace(tempFilePath);
     // fixing headers before return
     return rs.headers.map.map((key, value) {
       if (value.length == 1) return MapEntry(key, value.first);
@@ -294,6 +319,170 @@ class ProfileParser {
       );
     }
     return null;
+  }
+
+  static void rewriteSpecialFormatsInPlace(String tempFilePath) {
+    final file = File(tempFilePath);
+    if (!file.existsSync()) return;
+    final content = file.readAsStringSync();
+    final normalized = normalizeShadowrocketGostContent(content);
+    if (normalized != null && normalized != content) {
+      file.writeAsStringSync(normalized);
+    }
+  }
+
+  @visibleForTesting
+  static String? normalizeShadowrocketGostContent(String content) {
+    final headerLines = <String>[];
+    final candidateLines = <String>[];
+
+    for (final line in content.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      if (trimmed.startsWith('#') || trimmed.startsWith('//')) {
+        headerLines.add(trimmed);
+        continue;
+      }
+      candidateLines.add(trimmed);
+    }
+
+    if (candidateLines.isEmpty) return null;
+
+    final nodes = <_ShadowrocketGostNode>[];
+    for (final line in candidateLines) {
+      final node = _parseShadowrocketGostNode(line);
+      if (node == null) return null;
+      nodes.add(node);
+    }
+
+    final hasProfileTitle = headerLines.any(
+      (line) => line.toLowerCase().startsWith('#profile-title:') || line.toLowerCase().startsWith('//profile-title:'),
+    );
+    if (!hasProfileTitle) {
+      final title = nodes.length == 1 ? nodes.first.tag : 'Shadowrocket GOST WS';
+      headerLines.insert(0, '#profile-title: base64:${base64Encode(utf8.encode(title))}');
+    }
+
+    final usedTags = <String, int>{};
+    String nextTag(String rawTag) {
+      final baseTag = rawTag.trim().isEmpty ? 'Shadowrocket GOST' : rawTag.trim();
+      final occurrence = (usedTags[baseTag] ?? 0) + 1;
+      usedTags[baseTag] = occurrence;
+      return occurrence == 1 ? baseTag : '$baseTag #$occurrence';
+    }
+
+    final outbounds = nodes
+        .map(
+          (node) => {
+            'type': 'xray',
+            'tag': nextTag(node.tag),
+            'xconfig': {
+              'outbounds': [
+                {
+                  'tag': 'proxy',
+                  'protocol': 'socks',
+                  'settings': {
+                    'address': node.address,
+                    'port': node.port,
+                    'user': node.username,
+                    'pass': node.password,
+                  },
+                  'streamSettings': {
+                    'network': 'ws',
+                    'security': 'none',
+                    'wsSettings': {
+                      'path': node.wsPath,
+                      if (node.wsHost.isNotEmpty) 'host': node.wsHost,
+                    },
+                  },
+                },
+              ],
+            },
+            'xdebug': false,
+          },
+        )
+        .toList();
+
+    final buffer = StringBuffer();
+    for (final line in headerLines) {
+      buffer.writeln(line);
+    }
+    if (headerLines.isNotEmpty) {
+      buffer.writeln();
+    }
+    buffer.write(const JsonEncoder.withIndent('  ').convert({'outbounds': outbounds}));
+    return buffer.toString();
+  }
+
+  static _ShadowrocketGostNode? _parseShadowrocketGostNode(String line) {
+    try {
+      const scheme = 'socks://';
+      if (!line.startsWith(scheme)) return null;
+
+      final remainder = line.substring(scheme.length);
+      final queryIndex = remainder.indexOf('?');
+      final encodedAuthority = queryIndex == -1 ? remainder : remainder.substring(0, queryIndex);
+      final rawQuery = queryIndex == -1 ? '' : remainder.substring(queryIndex + 1);
+      if (encodedAuthority.isEmpty) return null;
+
+      final queryParameters = _parseRawQueryParameters(rawQuery);
+      final gostValue = queryParameters['gost'];
+      if (gostValue == null || gostValue.isEmpty) return null;
+
+      final decodedAuthority = utf8.decode(base64Decode(base64.normalize(encodedAuthority)));
+      final atIndex = decodedAuthority.lastIndexOf('@');
+      if (atIndex == -1) return null;
+
+      final credentials = decodedAuthority.substring(0, atIndex);
+      final endpoint = decodedAuthority.substring(atIndex + 1);
+      final separator = credentials.indexOf(':');
+      final portIndex = endpoint.lastIndexOf(':');
+      if (separator == -1 || portIndex == -1) return null;
+
+      final username = Uri.decodeComponent(credentials.substring(0, separator));
+      final password = Uri.decodeComponent(credentials.substring(separator + 1));
+      final address = endpoint.substring(0, portIndex);
+      final port = int.tryParse(endpoint.substring(portIndex + 1));
+      if (address.isEmpty || port == null) return null;
+
+      final gostConfig = jsonDecode(utf8.decode(base64Decode(base64.normalize(gostValue))));
+      if (gostConfig is! Map<String, dynamic>) return null;
+      final route = gostConfig['route']?.toString().trim().toLowerCase();
+      if (route != 'ws') return null;
+
+      final wsPath = gostConfig['path']?.toString().trim().isNotEmpty == true
+          ? gostConfig['path'].toString().trim()
+          : '/';
+      final wsHost = gostConfig['host']?.toString().trim().isNotEmpty == true
+          ? gostConfig['host'].toString().trim()
+          : address;
+      final remark = (queryParameters['remarks'] ?? '').trim();
+
+      return _ShadowrocketGostNode(
+        tag: remark.isNotEmpty ? remark : address,
+        address: address,
+        port: port,
+        username: username,
+        password: password,
+        wsPath: wsPath,
+        wsHost: wsHost,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Map<String, String> _parseRawQueryParameters(String query) {
+    if (query.isEmpty) return const {};
+    final params = <String, String>{};
+    for (final segment in query.split('&')) {
+      if (segment.isEmpty) continue;
+      final separator = segment.indexOf('=');
+      final key = separator == -1 ? segment : segment.substring(0, separator);
+      final value = separator == -1 ? '' : segment.substring(separator + 1);
+      params[Uri.decodeComponent(key)] = Uri.decodeComponent(value);
+    }
+    return params;
   }
 
   @visibleForTesting

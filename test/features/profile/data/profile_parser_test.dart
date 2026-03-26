@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
@@ -7,6 +9,8 @@ void main() {
   const validBaseUrl = "https://example.com/configurations/user1/filename.yaml";
   const validExtendedUrl = "https://example.com/configurations/user1/filename.yaml?test#b";
   const validSupportUrl = "https://example.com/support";
+  const shadowrocketGostNode =
+      "socks://cHJvJTNBdTIwMjU4ODc6M2RlNzkxMTMtODMyZC00MzZjLWEyYzYtZGNmNjJmMGJlMzhlQHQtdWMyMjItMTAwNjcuY2ktbGFiLmNvbTo4MA==?remarks=%E9%A6%99%E6%B8%AF%E9%AB%98%E9%80%9F%E4%B8%93%E7%BA%BF1%5B4K%5D&gost=eyJwYXRoIjoiXC9nb3N0IiwiaG9zdCI6InQtdWMyMjItMTAwNjcuY2ktbGFiLmNvbSIsInJvdXRlIjoid3MifQ==";
 
   group("parse", () {
     test("Should use filename in url with no headers and fragment", () {
@@ -161,6 +165,52 @@ void main() {
           );
         });
       });
+    });
+  });
+
+  group("normalizeShadowrocketGostContent", () {
+    test("Should convert Shadowrocket GOST socks nodes into xray outbounds", () {
+      final normalized = ProfileParser.normalizeShadowrocketGostContent(shadowrocketGostNode);
+
+      expect(normalized, isNotNull);
+      final jsonStart = normalized!.indexOf('{');
+      expect(jsonStart, greaterThanOrEqualTo(0));
+      expect(normalized.substring(0, jsonStart), contains("#profile-title: base64:"));
+
+      final config = normalized.substring(jsonStart);
+      final decoded = jsonDecode(config) as Map<String, dynamic>;
+      final outbounds = decoded["outbounds"] as List<dynamic>;
+      final outbound = outbounds.single as Map<String, dynamic>;
+      final xconfig = outbound["xconfig"] as Map<String, dynamic>;
+      final xrayOutbound = (xconfig["outbounds"] as List<dynamic>).single as Map<String, dynamic>;
+      final settings = xrayOutbound["settings"] as Map<String, dynamic>;
+      final streamSettings = xrayOutbound["streamSettings"] as Map<String, dynamic>;
+      final wsSettings = streamSettings["wsSettings"] as Map<String, dynamic>;
+
+      expect(outbound["type"], equals("xray"));
+      expect(outbound["tag"], equals("香港高速专线1[4K]"));
+      expect(xrayOutbound["protocol"], equals("socks"));
+      expect(settings["address"], equals("t-uc222-10067.ci-lab.com"));
+      expect(settings["port"], equals(80));
+      expect(settings["user"], equals("pro:u2025887"));
+      expect(settings["pass"], equals("3de79113-832d-436c-a2c6-dcf62f0be38e"));
+      expect(streamSettings["network"], equals("ws"));
+      expect(wsSettings["path"], equals("/gost"));
+      expect(wsSettings["host"], equals("t-uc222-10067.ci-lab.com"));
+    });
+
+    test("Should deduplicate generated outbound tags", () {
+      final normalized = ProfileParser.normalizeShadowrocketGostContent(
+        "$shadowrocketGostNode\n$shadowrocketGostNode",
+      );
+
+      expect(normalized, isNotNull);
+      final config = normalized!.substring(normalized.indexOf('{'));
+      final decoded = jsonDecode(config) as Map<String, dynamic>;
+      final outbounds = decoded["outbounds"] as List<dynamic>;
+
+      expect((outbounds[0] as Map<String, dynamic>)["tag"], equals("香港高速专线1[4K]"));
+      expect((outbounds[1] as Map<String, dynamic>)["tag"], equals("香港高速专线1[4K] #2"));
     });
   });
 }
