@@ -11,6 +11,10 @@ void main() {
   const validSupportUrl = "https://example.com/support";
   const shadowrocketGostNode =
       "socks://cHJvJTNBdTIwMjU4ODc6M2RlNzkxMTMtODMyZC00MzZjLWEyYzYtZGNmNjJmMGJlMzhlQHQtdWMyMjItMTAwNjcuY2ktbGFiLmNvbTo4MA==?remarks=%E9%A6%99%E6%B8%AF%E9%AB%98%E9%80%9F%E4%B8%93%E7%BA%BF1%5B4K%5D&gost=eyJwYXRoIjoiXC9nb3N0IiwiaG9zdCI6InQtdWMyMjItMTAwNjcuY2ktbGFiLmNvbSIsInJvdXRlIjoid3MifQ==";
+  const shadowrocketGostNodeWithRemarkAlias =
+      "socks://cHJvJTNBdTIwMjU4ODc6M2RlNzkxMTMtODMyZC00MzZjLWEyYzYtZGNmNjJmMGJlMzhlQHQtdWMyMjItMTAwNjcuY2ktbGFiLmNvbTo4MA==?remark=AliasName&gost=eyJ3c19wYXRoIjoiL2FsaWFzIiwid3NfaG9zdCI6ImFsaWFzLmV4YW1wbGUuY29tIiwibmV0d29yayI6IndzIn0=";
+  const shadowrocketGostNodeIpv6 =
+      "socks://ZFZlcjE6cCUzQXNzQFtAZmQwMDo6MV06NDQz?remarks=IPv6Node&gost=eyJwYXRoIjoiLmlwdjYiLCJob3N0IjoiaXB2Ni5leGFtcGxlLmNvbSIsInJvdXRlIjoid3MifQ==";
 
   group("parse", () {
     test("Should use filename in url with no headers and fragment", () {
@@ -214,6 +218,53 @@ void main() {
 
       expect((outbounds[0] as Map<String, dynamic>)["tag"], equals("香港高速专线1[4K]"));
       expect((outbounds[1] as Map<String, dynamic>)["tag"], equals("香港高速专线1[4K] #2"));
+    });
+
+    test("Should support base64-wrapped shadowrocket gost content", () {
+      final wrapped = base64Encode(utf8.encode(shadowrocketGostNode));
+      final normalized = ProfileParser.normalizeShadowrocketGostContent(safeDecodeBase64(wrapped));
+
+      expect(normalized, isNotNull);
+      final decoded = jsonDecode(normalized!.substring(normalized.indexOf('{'))) as Map<String, dynamic>;
+      final outbounds = decoded['outbounds'] as List<dynamic>;
+
+      expect(outbounds, hasLength(1));
+      expect((outbounds.single as Map<String, dynamic>)['tag'], equals('香港高速专线1[4K]'));
+    });
+
+    test("Should support remark alias and ws field aliases", () {
+      final normalized = ProfileParser.normalizeShadowrocketGostContent(shadowrocketGostNodeWithRemarkAlias);
+
+      expect(normalized, isNotNull);
+      final decoded = jsonDecode(normalized!.substring(normalized.indexOf('{'))) as Map<String, dynamic>;
+      final outbound = (decoded['outbounds'] as List<dynamic>).single as Map<String, dynamic>;
+      final xrayOutbound = ((outbound['xconfig'] as Map<String, dynamic>)['outbounds'] as List<dynamic>).single
+          as Map<String, dynamic>;
+      final wsSettings = xrayOutbound['streamSettings'] as Map<String, dynamic>;
+      final innerWs = wsSettings['wsSettings'] as Map<String, dynamic>;
+
+      expect(outbound['tag'], equals('AliasName'));
+      expect(innerWs['path'], equals('/alias'));
+      expect((innerWs['headers'] as Map<String, dynamic>)['Host'], equals('alias.example.com'));
+    });
+
+    test("Should support IPv6 endpoints and passwords containing colon", () {
+      final normalized = ProfileParser.normalizeShadowrocketGostContent(shadowrocketGostNodeIpv6);
+
+      expect(normalized, isNotNull);
+      final decoded = jsonDecode(normalized!.substring(normalized.indexOf('{'))) as Map<String, dynamic>;
+      final outbound = (decoded['outbounds'] as List<dynamic>).single as Map<String, dynamic>;
+      final xrayOutbound = ((outbound['xconfig'] as Map<String, dynamic>)['outbounds'] as List<dynamic>).single
+          as Map<String, dynamic>;
+      final server = (((xrayOutbound['settings'] as Map<String, dynamic>)['servers'] as List<dynamic>).single)
+          as Map<String, dynamic>;
+      final user = ((server['users'] as List<dynamic>).single) as Map<String, dynamic>;
+
+      expect(outbound['tag'], equals('IPv6Node'));
+      expect(server['address'], equals('fd00::1'));
+      expect(server['port'], equals(443));
+      expect(user['user'], equals('dVer1'));
+      expect(user['pass'], equals('p:ss@'));
     });
   });
 }

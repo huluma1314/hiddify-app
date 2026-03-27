@@ -35,6 +35,20 @@ class _ShadowrocketGostNode {
   final String wsHost;
 }
 
+class _ShadowrocketGostAuthority {
+  const _ShadowrocketGostAuthority({
+    required this.username,
+    required this.password,
+    required this.address,
+    required this.port,
+  });
+
+  final String username;
+  final String password;
+  final String address;
+  final int port;
+}
+
 /// parse profile subscription url and headers for data
 ///
 /// ***name parser hierarchy:***
@@ -325,7 +339,7 @@ class ProfileParser {
     final file = File(tempFilePath);
     if (!file.existsSync()) return;
     final content = file.readAsStringSync();
-    final normalized = normalizeShadowrocketGostContent(content);
+    final normalized = normalizeShadowrocketGostContent(safeDecodeBase64(content));
     if (normalized != null && normalized != content) {
       file.writeAsStringSync(normalized);
     }
@@ -440,47 +454,94 @@ class ProfileParser {
       final gostValue = queryParameters['gost'];
       if (gostValue == null || gostValue.isEmpty) return null;
 
-      final decodedAuthority = utf8.decode(base64Decode(base64.normalize(encodedAuthority)));
-      final atIndex = decodedAuthority.lastIndexOf('@');
-      if (atIndex == -1) return null;
-
-      final credentials = decodedAuthority.substring(0, atIndex);
-      final endpoint = decodedAuthority.substring(atIndex + 1);
-      final separator = credentials.indexOf(':');
-      final portIndex = endpoint.lastIndexOf(':');
-      if (separator == -1 || portIndex == -1) return null;
-
-      final username = Uri.decodeComponent(credentials.substring(0, separator));
-      final password = Uri.decodeComponent(credentials.substring(separator + 1));
-      final address = endpoint.substring(0, portIndex);
-      final port = int.tryParse(endpoint.substring(portIndex + 1));
-      if (address.isEmpty || port == null) return null;
+      final authority = _parseShadowrocketGostAuthority(encodedAuthority);
+      if (authority == null) return null;
 
       final gostConfig = jsonDecode(utf8.decode(base64Decode(base64.normalize(gostValue))));
       if (gostConfig is! Map<String, dynamic>) return null;
-      final route = gostConfig['route']?.toString().trim().toLowerCase();
+      final route = (gostConfig['route'] ?? gostConfig['network'])?.toString().trim().toLowerCase();
       if (route != 'ws') return null;
 
-      final wsPath = gostConfig['path']?.toString().trim().isNotEmpty == true
-          ? gostConfig['path'].toString().trim()
-          : '/';
-      final wsHost = gostConfig['host']?.toString().trim().isNotEmpty == true
-          ? gostConfig['host'].toString().trim()
-          : address;
-      final remark = (queryParameters['remarks'] ?? '').trim();
+      final wsPath = _firstNonEmptyString([
+            gostConfig['path'],
+            gostConfig['wsPath'],
+            gostConfig['ws_path'],
+          ])?.trim() ??
+          '/';
+      final wsHost = _firstNonEmptyString([
+            gostConfig['host'],
+            gostConfig['wsHost'],
+            gostConfig['ws_host'],
+            gostConfig['serverName'],
+            gostConfig['servername'],
+            queryParameters['host'],
+          ])
+          ?.trim();
+      final remark = (queryParameters['remarks'] ?? queryParameters['remark'] ?? '').trim();
 
       return _ShadowrocketGostNode(
-        tag: remark.isNotEmpty ? remark : address,
-        address: address,
-        port: port,
-        username: username,
-        password: password,
+        tag: remark.isNotEmpty ? remark : authority.address,
+        address: authority.address,
+        port: authority.port,
+        username: authority.username,
+        password: authority.password,
         wsPath: wsPath,
-        wsHost: wsHost,
+        wsHost: (wsHost?.isNotEmpty ?? false) ? wsHost! : authority.address,
       );
     } catch (_) {
       return null;
     }
+  }
+
+  static _ShadowrocketGostAuthority? _parseShadowrocketGostAuthority(String encodedAuthority) {
+    final decodedAuthority = utf8.decode(base64Decode(base64.normalize(encodedAuthority)));
+    final atIndex = decodedAuthority.lastIndexOf('@');
+    if (atIndex == -1) return null;
+
+    final credentials = decodedAuthority.substring(0, atIndex);
+    final endpoint = decodedAuthority.substring(atIndex + 1);
+    final separator = credentials.indexOf(':');
+    if (separator == -1) return null;
+
+    final username = Uri.decodeComponent(credentials.substring(0, separator));
+    final password = Uri.decodeComponent(credentials.substring(separator + 1));
+    final hostPort = _parseHostAndPort(endpoint);
+    if (hostPort == null) return null;
+
+    return _ShadowrocketGostAuthority(
+      username: username,
+      password: password,
+      address: hostPort.$1,
+      port: hostPort.$2,
+    );
+  }
+
+  static (String, int)? _parseHostAndPort(String endpoint) {
+    if (endpoint.isEmpty) return null;
+
+    if (endpoint.startsWith('[')) {
+      final closing = endpoint.indexOf(']');
+      if (closing == -1 || closing + 1 >= endpoint.length || endpoint[closing + 1] != ':') return null;
+      final address = endpoint.substring(1, closing);
+      final port = int.tryParse(endpoint.substring(closing + 2));
+      if (address.isEmpty || port == null) return null;
+      return (address, port);
+    }
+
+    final portIndex = endpoint.lastIndexOf(':');
+    if (portIndex == -1) return null;
+    final address = endpoint.substring(0, portIndex);
+    final port = int.tryParse(endpoint.substring(portIndex + 1));
+    if (address.isEmpty || port == null) return null;
+    return (address, port);
+  }
+
+  static String? _firstNonEmptyString(List<dynamic> candidates) {
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return null;
   }
 
   static Map<String, String> _parseRawQueryParameters(String query) {
