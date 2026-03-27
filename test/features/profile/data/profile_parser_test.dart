@@ -222,7 +222,7 @@ void main() {
 
     test("Should support base64-wrapped shadowrocket gost content", () {
       final wrapped = base64Encode(utf8.encode(shadowrocketGostNode));
-      final normalized = ProfileParser.normalizeShadowrocketGostContent(safeDecodeBase64(wrapped));
+      final normalized = ProfileParser.normalizeShadowrocketGostContent(utf8.decode(base64Decode(wrapped)));
 
       expect(normalized, isNotNull);
       final decoded = jsonDecode(normalized!.substring(normalized.indexOf('{'))) as Map<String, dynamic>;
