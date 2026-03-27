@@ -264,7 +264,7 @@ void main() {
       expect(server['address'], equals('fd00::1'));
       expect(server['port'], equals(443));
       expect(user['user'], equals('dVer1'));
-      expect(user['pass'], equals('p:ss@'));
+      expect(user['pass'], equals('p:ss'));
     });
   });
 }
