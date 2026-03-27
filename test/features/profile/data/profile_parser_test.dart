@@ -14,7 +14,7 @@ void main() {
   const shadowrocketGostNodeWithRemarkAlias =
       "socks://cHJvJTNBdTIwMjU4ODc6M2RlNzkxMTMtODMyZC00MzZjLWEyYzYtZGNmNjJmMGJlMzhlQHQtdWMyMjItMTAwNjcuY2ktbGFiLmNvbTo4MA==?remark=AliasName&gost=eyJ3c19wYXRoIjoiL2FsaWFzIiwid3NfaG9zdCI6ImFsaWFzLmV4YW1wbGUuY29tIiwibmV0d29yayI6IndzIn0=";
   const shadowrocketGostNodeIpv6 =
-      "socks://ZFZlcjE6cCUzQXNzQFtAZmQwMDo6MV06NDQz?remarks=IPv6Node&gost=eyJwYXRoIjoiLmlwdjYiLCJob3N0IjoiaXB2Ni5leGFtcGxlLmNvbSIsInJvdXRlIjoid3MifQ==";
+      "socks://ZFZlcjE6cCUzQXNzQFtmZDAwOjoxXTo0NDM=?remarks=IPv6Node&gost=eyJwYXRoIjoiLmlwdjYiLCJob3N0IjoiaXB2Ni5leGFtcGxlLmNvbSIsInJvdXRlIjoid3MifQ==";
 
   group("parse", () {
     test("Should use filename in url with no headers and fragment", () {
